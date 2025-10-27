@@ -14,7 +14,7 @@ POOL_REG_LAMBDA=1e-2
 EPOCHS=100
 BATCH_SIZE=32
 DEVICE="cuda"
-CUDA_DEV=1
+CUDA_DEV=0
 MAIN_PY="main5.py"
 
 for ((r=1; r<=ROUNDS; r++)); do
@@ -41,8 +41,8 @@ for ((r=1; r<=ROUNDS; r++)); do
       --seed ${seed} \
       --pool_reg_lambda ${POOL_REG_LAMBDA} \
       --amp false \
-      --num_workers 4  \
-      --prefetch_factor 2 \
+      --num_workers 2  \
+      --prefetch_factor 1 \
       --persistent_workers true \
       --pin_memory true \
       --precomputed_root ./precomputed/Kd_s42
