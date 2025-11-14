@@ -15,7 +15,7 @@ from torch.nn import MSELoss
 # ==================== Local modules ====================
 sys.path.append(os.getcwd())  # ensure local 'modules' is importable
 from modules.dta_models import MultimodalBindingAffinityModel
-from modules.dta_set import PrecomputedBindingDataset
+from modules.dta_dataset import PrecomputedBindingDataset
 from utils import collate_binding, set_seed, positive_int, bool_flag, register_safe_globals
 from sampler import ShardAwareBatchSampler
 from trainer import fit

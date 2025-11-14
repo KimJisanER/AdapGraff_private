@@ -26,10 +26,10 @@ from rdkit import Chem
 from torch_geometric.utils import coalesce
 from torch_geometric.data import Data
 from tdc.multi_pred import DTI
+from utils import to_cpu_tensor, map_nested_to_cpu, _to_1d_cpu_float
 
 # === Import your own modules ===
-from modules.dta_dataset import (map_nested_to_cpu, _to_1d_cpu_float, to_cpu_tensor, mol2graph, dgdata_to_nx,
-                                      build_coding_tree_single, tree_to_treebatch_item)
+from modules.dta_dataset import *
 from protein_init import *
 
 
@@ -83,7 +83,7 @@ def normalize_protein_graph(prot: dict) -> Data:
 
 
 # ====== 샤드 저장 ======
-def save_split(df, split_name, out_root: Path, shard_size, tree_depth, k, prot_cache):
+def save_split(df, split_name, out_root: Path, shard_size, k, prot_cache):
     """df의 각 row를 PyG 샘플로 전처리하여 shards/에 저장"""
     split_dir = out_root / split_name
     shard_dir = split_dir
@@ -108,11 +108,6 @@ def save_split(df, split_name, out_root: Path, shard_size, tree_depth, k, prot_c
         lig.atoms = [a.GetSymbol() for a in mol.GetAtoms()]
         lig.bonds_idx = [(b.GetBeginAtomIdx(), b.GetEndAtomIdx()) for b in mol.GetBonds()]
 
-        # Tree(SEP)
-        nxG = dgdata_to_nx(lig)
-        tree = build_coding_tree_single(nxG, tree_depth=tree_depth, k=k)
-        tree_item = tree_to_treebatch_item(tree, tree_depth=tree_depth)
-
         # Protein graph (CPU + 정규화)
         prot = prot_cache[seq]
         pg = normalize_protein_graph(prot)
@@ -122,7 +117,6 @@ def save_split(df, split_name, out_root: Path, shard_size, tree_depth, k, prot_c
             "smiles": smiles,
             "label": torch.tensor(label, dtype=torch.float32),
             "graph": lig,
-            "tree": tree_item,
             "protein_graph": pg,
         }
         items.append(sample)
@@ -146,7 +140,6 @@ def save_split(df, split_name, out_root: Path, shard_size, tree_depth, k, prot_c
                 "num_samples": int(total),
                 "num_shards": int(shard_idx),
                 "shard_size": int(shard_size),
-                "tree_depth": int(tree_depth),
                 "k": int(k),
             },
             f,
@@ -161,7 +154,6 @@ def main():
     parser.add_argument("--data_type", type=str, default="Kd", choices=["Kd", "Ki", "IC50"])
     parser.add_argument("--seed", type=int, default=42)
     parser.add_argument("--out_base", type=str, default="./precomputed")
-    parser.add_argument("--tree_depth", type=int, default=3)
     parser.add_argument("--k", type=int, default=2)
     parser.add_argument("--protein_contact_threshold", type=float, default=8.0)
     parser.add_argument("--protein_batch_size", type=int, default=64)
@@ -214,9 +206,9 @@ def main():
     print(f"[INFO] Protein cache ready: {len(prot_cache)} unique sequences")
 
     # === 샤드 저장 (train/val/test) ===
-    save_split(train_df, "train", out_root, args.shard_size, args.tree_depth, args.k, prot_cache)
-    save_split(val_df,   "val",   out_root, args.shard_size, args.tree_depth, args.k, prot_cache)
-    save_split(test_df,  "test",  out_root, args.shard_size, args.tree_depth, args.k, prot_cache)
+    save_split(train_df, "train", out_root, args.shard_size, args.k, prot_cache)
+    save_split(val_df,   "val",   out_root, args.shard_size, args.k, prot_cache)
+    save_split(test_df,  "test",  out_root, args.shard_size, args.k, prot_cache)
 
     # === top-level meta ===
     with open(out_root / "meta.json", "w") as f:
@@ -225,7 +217,6 @@ def main():
                 "dataset_name": dataset_name,
                 "data_type": args.data_type,
                 "seed": args.seed,
-                "tree_depth": args.tree_depth,
                 "k": args.k,
                 "protein_contact_threshold": args.protein_contact_threshold,
                 "protein_weight_mode": args.protein_weight_mode,
