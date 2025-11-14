@@ -131,7 +131,6 @@ def build_parser():
     p.add_argument("--graph_pooling", type=str, default="sum")
     p.add_argument("--node_attn", type=bool_flag, default=True)
     p.add_argument("--face_attn", type=bool_flag, default=True)
-    p.add_argument("--som_mode", type=bool_flag, default=False)
 
     # Ligand encoder
     p.add_argument("--ligand_gnn_type", type=str, default="dualgraph")
@@ -282,7 +281,6 @@ def main():
         graph_pooling=args.graph_pooling,
         node_attn=args.node_attn,
         face_attn=args.face_attn,
-        som_mode=args.som_mode,
 
         # Ligand encoder
         ligand_gnn_type=args.ligand_gnn_type,
