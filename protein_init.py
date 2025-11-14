@@ -36,7 +36,7 @@ from Bio.PDB import PDBParser
 ########################################################################################################################
 
 def protein_init(seqs, contact_threshold=8.0, batch_size=2,
-                 weight_mode: str = 'inverse', sigma: float | None = None):
+                 weight_mode: str = 'inverse', sigma: float | None = None, esm_structure = False):
     """
     weight_mode: 'inverse' | 'gaussian' | 'linear' | 'binary' | 'raw'
       - inverse : 1 / (d + eps)
@@ -189,7 +189,10 @@ def protein_init(seqs, contact_threshold=8.0, batch_size=2,
         torch.cuda.empty_cache()
         gc.collect()
 
-    return result_dict
+    if esm_structure:
+        return result_dict, structure_output
+    else:
+        return result_dict
 
 def get_contact_map_from_coords(coords, atom_index=1, threshold=8.0):
     """
@@ -480,40 +483,6 @@ def esm_extract(model, batch_converter, seq, layer=36, approach='mean',dim=2560)
                 break
 
     return torch.from_numpy(token_representation), torch.from_numpy(contact_prob_map), torch.from_numpy(logits)
-
-
-
-
-def generate_ESM_structure(model, filename, sequence):
-    model.set_chunk_size(256)
-    chunk_size = 256
-    output = None
-
-    while output is None:
-        try:
-            with torch.no_grad():
-                output = model.infer_pdb(sequence)
-
-            with open(filename, "w") as f:
-                f.write(output)
-                print("saved", filename)
-        except RuntimeError as e:
-            if 'out of memory' in str(e):
-                print('| WARNING: ran out of memory on chunk_size', chunk_size)
-                for p in model.parameters():
-                    if p.grad is not None:
-                        del p.grad  # free some memory
-                torch.cuda.empty_cache()
-                chunk_size = chunk_size // 2
-                if chunk_size > 2:
-                    model.set_chunk_size(chunk_size)
-                else:
-                    print("Not enough memory for ESMFold")
-                    break
-            else:
-                raise e
-    return output is not None
-
 
 from Bio.PDB import PDBParser
 biopython_parser = PDBParser()

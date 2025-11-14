@@ -28,7 +28,7 @@ from torch_geometric.data import Data
 from tdc.multi_pred import DTI
 
 # === Import your own modules ===
-from modules.dta_dataset_SEP3 import (map_nested_to_cpu, _to_1d_cpu_float, to_cpu_tensor, mol2graph, dgdata_to_nx,
+from modules.dta_dataset import (map_nested_to_cpu, _to_1d_cpu_float, to_cpu_tensor, mol2graph, dgdata_to_nx,
                                       build_coding_tree_single, tree_to_treebatch_item)
 from protein_init import *
 

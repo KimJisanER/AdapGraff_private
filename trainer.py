@@ -25,96 +25,7 @@ from torch_geometric.utils import (
     subgraph, to_undirected
 )
 
-
-def _as_pyg_batch(x):
-    """Data / list[Data] / Batch / dict(Data-like) → Batch 로 통일"""
-    if x is None:
-        return None
-    if isinstance(x, PygBatch):
-        return x
-    if isinstance(x, PygData):
-        return PygBatch.from_data_list([x])
-    if isinstance(x, (list, tuple)):
-        return PygBatch.from_data_list(list(x))
-    if isinstance(x, dict) and ("x" in x and "edge_index" in x):
-        return PygBatch.from_data_list([PygData(**x)])
-    raise TypeError(f"Unsupported graph type for _as_pyg_batch: {type(x)}")
-# ───────────────────────── 공용 유틸 (당신 코드 유지/활용) ─────────────────────────
-def _move_to_device(x, device):
-    if hasattr(x, "to"):
-        try:
-            return x.to(device)
-        except TypeError:
-            return x
-    if isinstance(x, (list, tuple)):
-        return type(x)(_move_to_device(v, device) for v in x)
-    if isinstance(x, dict):
-        return {k: _move_to_device(v, device) for k, v in x.items()}
-    return x
-
-def _first_present(d: dict, keys: list[str]):
-    """dict에서 None이 아닌 첫 값을 반환 (Tensor에도 안전)"""
-    for k in keys:
-        if k in d and d[k] is not None:
-            return d[k]
-    return None
-
-def _unpack_batch(batch):
-    """
-    다양한 포맷의 배치를 받아
-    (sequences, graphs, protein_graphs, labels, tree_batch)로 반환.
-    """
-    sequences = graphs = protein_graphs = labels = tree_batch = None
-
-    if isinstance(batch, dict):
-        sequences       = _first_present(batch, ["protein_sequences", "sequences", "sequence"])
-        graphs          = _first_present(batch, ["ligand_batch", "graphs", "graph"])
-        protein_graphs  = _first_present(batch, ["protein_graphs", "protein_graph"])
-        labels          = _first_present(batch, ["y", "labels", "label"])
-        tree_batch      = _first_present(batch, ["tree_batch", "tree"])
-
-    elif isinstance(batch, (list, tuple)):
-        # 구형 튜플 포맷 대응
-        if len(batch) == 5:
-            sequences, graphs, protein_graphs, labels, tree_batch = batch
-        elif len(batch) == 4:
-            a, b, c, d = batch
-            # c가 그래프처럼 보이면 protein_graphs로 간주
-            is_graph_like = hasattr(c, "edge_index") or (hasattr(c, "to") and not torch.is_tensor(c))
-            if is_graph_like:
-                sequences, graphs, protein_graphs, labels = a, b, c, d
-            else:
-                sequences, graphs, labels, tree_batch = a, b, c, d
-        elif len(batch) == 3:
-            sequences, graphs, labels = batch
-        else:
-            raise ValueError(f"Unexpected batch length: {len(batch)}")
-    else:
-        raise TypeError(f"Unsupported batch type: {type(batch)}")
-
-    # 타입 정리
-    if isinstance(sequences, str):
-        sequences = [sequences]
-    if labels is not None and hasattr(labels, "shape"):
-        labels = labels.view(-1)
-
-    # 결측 진단
-    missing = []
-    if sequences is None:      missing.append("protein_sequences/sequences/sequence")
-    if graphs is None:         missing.append("ligand_batch/graphs/graph")
-    if labels is None:         missing.append("y/labels/label")
-    if missing:
-        keys = list(batch.keys()) if isinstance(batch, dict) else f"tuple_len={len(batch)}"
-        raise KeyError(f"[_unpack_batch] Missing keys: {missing}. Batch keys: {keys}")
-
-    return sequences, graphs, protein_graphs, labels, tree_batch
-
-def _model_accepts_arg(model, arg_name: str) -> bool:
-    try:
-        sig = inspect.signature(model.forward)
-        return arg_name in sig.parameters
-    except (ValueError, AttributeError):
-        return False
+from utils import _as_pyg_batch, _move_to_device, _first_present, _unpack_batch, _model_accepts_arg
 
 # ───────────────────────── 평가 지표 ─────────────────────────
 def _regression_metrics(y_true, y_pred):
@@ -134,7 +45,6 @@ def _get_curr_lr(optimizer):
 # ───────────────────────── 에폭 단위 학습/검증 ─────────────────────────
 def train_epoch(
     model, loader, optimizer, criterion, device,
-    use_sepool: bool = True,
     cluster_level_for_readout: int | None = 1,
     return_attn_weights: bool = False,
     return_cluster_levels: bool = False,
@@ -166,8 +76,6 @@ def train_epoch(
         graphs = _move_to_device(graphs, device)
         if protein_graphs is not None:
             protein_graphs = _move_to_device(protein_graphs, device)
-        if (use_sepool is True) and (tree_batch is not None):
-            tree_batch = _move_to_device(tree_batch, device)
 
         # --- forward kwargs 구성 ---
         kwargs = dict(
@@ -175,8 +83,6 @@ def train_epoch(
             return_attn_weights=return_attn_weights,
             return_cluster_levels=return_cluster_levels,
         )
-        if use_sepool and (tree_batch is not None) and accepts_tree:
-            kwargs["tree_batch"] = tree_batch
         if (protein_graphs is not None) and accepts_protein:
             kwargs["protein_graphs"] = protein_graphs
 
@@ -235,7 +141,6 @@ def train_epoch(
 @torch.no_grad()
 def validate_epoch(
     model, loader, criterion, device,
-    use_sepool: bool = True,
     cluster_level_for_readout: int | None = 1,
     return_attn_weights: bool = False,
     return_cluster_levels: bool = False,
@@ -265,8 +170,6 @@ def validate_epoch(
             return_attn_weights=return_attn_weights,
             return_cluster_levels=return_cluster_levels,
         )
-        if use_sepool and tree_batch is not None and accepts_tree:
-            kwargs["tree_batch"] = tree_batch
         if protein_graphs is not None and accepts_protein:
             kwargs["protein_graphs"] = protein_graphs
 
@@ -312,7 +215,6 @@ def fit(
     run_id: str | int = 0,
     early_stopping_patience: int | None = None,
     pool_reg_lambda: float = 1e-3,
-    use_sepool: bool = True,
     cluster_level_for_readout: int | None = 1,
     return_attn_weights: bool = False,
     return_cluster_levels: bool = False,
@@ -346,7 +248,6 @@ def fit(
         # 학습
         train_stats = train_epoch(
             model, train_loader, optimizer, criterion, device,
-            use_sepool=use_sepool,
             cluster_level_for_readout=cluster_level_for_readout,
             return_attn_weights=return_attn_weights,
             return_cluster_levels=return_cluster_levels,
@@ -361,7 +262,6 @@ def fit(
         if (val_loader is not None) and (epoch % evaluate_every == 0):
             val_stats = validate_epoch(
                 model, val_loader, criterion, device,
-                use_sepool=use_sepool,
                 cluster_level_for_readout=cluster_level_for_readout,
                 return_attn_weights=return_attn_weights,
                 return_cluster_levels=return_cluster_levels,
@@ -382,7 +282,6 @@ def fit(
             if test_loader is not None:
                 test_stats = validate_epoch(
                     model, test_loader, criterion, device,
-                    use_sepool=use_sepool,
                     cluster_level_for_readout=cluster_level_for_readout,
                     return_attn_weights=return_attn_weights,
                     return_cluster_levels=return_cluster_levels,
