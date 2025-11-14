@@ -67,7 +67,7 @@ class MultimodalBindingAffinityModel(nn.Module):
         self.device = device
         self.ligand_gnn_type = ligand_gnn_type.lower()
         self.ddi = ddi
-
+        self.max_len_cap = int(max_len_cap)
         self.use_protein_graph_structure = use_protein_graph_structure
         self.protein_mp_layers = max(0, int(protein_mp_layers))
         # ▼ 새 파라미터 저장
@@ -459,7 +459,7 @@ class MultimodalBindingAffinityModel(nn.Module):
                 esmc_model=self.esm,
                 seqs=seq_list,
                 tokenizer=tokenizer,
-                max_len_cap=max_len_cap,
+                max_len_cap=self.max_len_cap,
                 max_tokens_per_batch=65536,
                 device=next(self.parameters()).device,
                 requires_grad=requires_esm_grad,  # ★ 추가

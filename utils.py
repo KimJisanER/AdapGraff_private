@@ -19,7 +19,7 @@ import numpy as np
 import networkx as nx
 from torch_geometric.data import Batch as PygBatch
 import torch
-
+import importlib, inspect
 
 def load_graph(dname):
     print('loading data')

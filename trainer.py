@@ -51,7 +51,7 @@ def train_epoch(
     scheduler=None, scheduler_step_on: str = "batch",  # "batch" or "epoch" or None
     pool_reg_lambda: float = 1e-3,
     grad_clip: float | None = None,
-    amp: bool = True,
+    amp: bool = False,
     log_interval: int = 0,
 ):
     model.train()
@@ -144,7 +144,7 @@ def validate_epoch(
     cluster_level_for_readout: int | None = 1,
     return_attn_weights: bool = False,
     return_cluster_levels: bool = False,
-    amp: bool = True,
+    amp: bool = False,
 ):
     model.eval()
     accepts_protein = _model_accepts_arg(model, "protein_graphs")
@@ -207,7 +207,7 @@ def fit(
     scheduler=None,
     scheduler_step_on: str = "batch",   # "batch" | "epoch" | None
     grad_clip: float | None = None,
-    amp: bool = True,
+    amp: bool = False,
     log_interval: int = 0,
     evaluate_every: int = 1,
     evaluate_metric: str = "rmse",      # "loss" | "rmse" | "mse" | "mae" | "r2"
