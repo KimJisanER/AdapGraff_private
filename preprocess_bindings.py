@@ -92,6 +92,7 @@ def save_split(df, split_name, out_root: Path, shard_size, k, prot_cache):
     items = []
     shard_idx = 0
     total = len(df)
+    processed_count = 0
 
     for i, row in tqdm(df.iterrows(), total=total, desc=f"Preproc[{split_name}]"):
         smiles = row["Drug"]
@@ -101,16 +102,26 @@ def save_split(df, split_name, out_root: Path, shard_size, k, prot_cache):
         # Ligand graph (CPU)
         mol = Chem.MolFromSmiles(smiles)
         if mol is None:
+            # print(f"Warning: Invalid SMILES {smiles}. Skipping.")
             continue
-        lig = mol2graph(mol)  # 내부에서 CPU 텐서 리턴되도록 구현되어 있어야 함
-        lig.smile = smiles
-        # 부가정보(원하면)
-        lig.atoms = [a.GetSymbol() for a in mol.GetAtoms()]
-        lig.bonds_idx = [(b.GetBeginAtomIdx(), b.GetEndAtomIdx()) for b in mol.GetBonds()]
 
-        # Protein graph (CPU + 정규화)
-        prot = prot_cache[seq]
-        pg = normalize_protein_graph(prot)
+        try:
+            lig = mol2graph(mol)  # 내부에서 CPU 텐서 리턴되도록 구현되어 있어야 함
+            lig.smile = smiles
+            # 부가정보(원하면)
+            lig.atoms = [a.GetSymbol() for a in mol.GetAtoms()]
+            lig.bonds_idx = [(b.GetBeginAtomIdx(), b.GetEndAtomIdx()) for b in mol.GetBonds()]
+
+            # Protein graph (CPU + 정규화)
+            if seq not in prot_cache:
+                # print(f"Warning: Sequence for {smiles} not in prot_cache. Skipping.")
+                continue
+            prot = prot_cache[seq]
+            pg = normalize_protein_graph(prot)
+
+        except Exception as e:
+            print(e)
+            continue
 
         sample = {
             "sequence": seq,
@@ -120,6 +131,7 @@ def save_split(df, split_name, out_root: Path, shard_size, k, prot_cache):
             "protein_graph": pg,
         }
         items.append(sample)
+        processed_count += 1
 
         if len(items) >= shard_size:
             shard_path = shard_dir / f"{split_name}_shard_{shard_idx:05d}.pt"
@@ -137,7 +149,7 @@ def save_split(df, split_name, out_root: Path, shard_size, k, prot_cache):
         json.dump(
             {
                 "split": split_name,
-                "num_samples": int(total),
+                "num_samples": int(processed_count),  # 실제 처리된 샘플 수
                 "num_shards": int(shard_idx),
                 "shard_size": int(shard_size),
                 "k": int(k),
@@ -145,7 +157,7 @@ def save_split(df, split_name, out_root: Path, shard_size, k, prot_cache):
             f,
             indent=2,
         )
-    print(f"[OK] {split_name}: {total} samples -> {shard_idx} shard(s)")
+    print(f"[OK] {split_name}: {processed_count} samples -> {shard_idx} shard(s)")
 
 
 # ====== 메인 ======
